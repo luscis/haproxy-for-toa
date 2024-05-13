@@ -25,6 +25,10 @@
 #include <netinet/tcp.h>
 #include <netinet/in.h>
 
+#include <linux/bpf.h>
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
+
 #include <haproxy/api.h>
 #include <haproxy/arg.h>
 #include <haproxy/connection.h>
@@ -226,6 +230,49 @@ int tcp_bind_socket(int fd, int flags, struct sockaddr_storage *local, struct so
 	return 0;
 }
 
+#if defined(USE_BPF_TOA)
+struct bpf_toa_user {
+	__uint8_t toa_kind;
+	__uint8_t toa_padding;
+	__uint16_t toa_tcp_port;
+	__uint32_t toa_tcp_host;
+};
+
+static int bpf_open_map(int map_id)
+{
+	static int map_fd = -1;
+
+	if (map_fd > 0)
+		return map_fd;
+
+	map_fd = bpf_map_get_fd_by_id(map_id);
+	if (map_fd < 0) {
+		ha_alert("Cannot get a bpf map.\n");
+		return -1;
+	}
+	return map_fd;
+}
+
+static void bpf_update_map(int map_fd, int sock_fd, struct sockaddr_storage *addr)
+{
+	struct bpf_toa_user opt = {
+		.toa_kind = 254,
+		.toa_tcp_port = 0,
+	};
+
+	if (!addr)
+		return;
+
+	opt.toa_tcp_port = ((struct sockaddr_in *)addr)->sin_port;
+	opt.toa_tcp_host = ((struct sockaddr_in *)addr)->sin_addr.s_addr;
+
+	if (bpf_map_update_elem(map_fd, &sock_fd, &opt, BPF_NOEXIST)) {
+		ha_alert("Could not update map element\n");
+	}
+}
+
+#endif
+
 /*
  * This function initiates a TCP connection establishment to the target assigned
  * to connection <conn> using (si->{target,dst}). A source address may be
@@ -258,7 +305,7 @@ int tcp_bind_socket(int fd, int flags, struct sockaddr_storage *local, struct so
 
 int tcp_connect_server(struct connection *conn, int flags)
 {
-	int fd;
+	int fd, map_fd = -1;
 	struct server *srv;
 	struct proxy *be;
 	struct conn_src *src;
@@ -502,6 +549,13 @@ int tcp_connect_server(struct connection *conn, int flags)
 	if (global.tune.server_rcvbuf)
                 setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &global.tune.server_rcvbuf, sizeof(global.tune.server_rcvbuf));
 
+#if defined(USE_BPF_TOA)
+	if (global.bfp_toa_id > 0) {
+		map_fd = bpf_open_map(global.bfp_toa_id);
+		if (map_fd > 0)
+			bpf_update_map(map_fd, fd, conn->src);
+	}
+#endif
 	addr = (conn->flags & CO_FL_SOCKS4) ? &srv->socks4_addr : conn->dst;
 	if (connect(fd, (const struct sockaddr *)addr, get_addr_len(addr)) == -1) {
 		if (errno == EINPROGRESS || errno == EALREADY) {

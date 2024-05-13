@@ -610,6 +610,9 @@ static void usage(char *name)
 		"        -sf/-st [pid ]* finishes/terminates old pids.\n"
 		"        -x <unix_socket> get listening sockets from a unix socket\n"
 		"        -S <bind>[,<bind options>...] new master CLI\n"
+#if defined(USE_BPF_TOA)
+		"        -bT[id] set storage map for bfp toa program.\n"
+#endif
 		"\n",
 		name, cfg_maxpconn);
 	exit(1);
@@ -1650,6 +1653,10 @@ static void init(int argc, char **argv)
 				usage(progname);
 #endif
 			}
+#if defined(USE_BPF_TOA)
+			else if (*flag == 'b' && flag[1] == 'T')
+				global.bfp_toa_id = flag[2] ? strtol(flag + 2, NULL, 0) : -1;
+#endif
 			else if (*flag == 'W')
 				arg_mode |= MODE_MWORKER;
 			else if (*flag == 'q')
