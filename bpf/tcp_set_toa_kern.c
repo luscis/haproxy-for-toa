@@ -35,7 +35,7 @@ int set_toa_tcp_bs(struct bpf_sock_ops *skops) {
 
 	struct tcp_toa_option *data = NULL;
 
-	data = bpf_sk_storage_get(&toa_conn_store, sk, NULL, BPF_SK_STORAGE_GET_F_CREATE);
+	data = bpf_sk_storage_get(&toa_conn_store, sk, NULL, 0);
 	if (!data)
 		return 1;
 
