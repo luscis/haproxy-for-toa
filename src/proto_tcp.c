@@ -255,6 +255,7 @@ static int bpf_open_map(int map_id)
 
 static void bpf_update_map(int map_fd, int sock_fd, struct sockaddr_storage *addr)
 {
+	struct sockaddr_in *remote = addr;
 	struct bpf_toa_user opt = {
 		.toa_kind = 254,
 		.toa_tcp_port = 0,
@@ -263,8 +264,8 @@ static void bpf_update_map(int map_fd, int sock_fd, struct sockaddr_storage *add
 	if (!addr)
 		return;
 
-	opt.toa_tcp_port = ((struct sockaddr_in *)addr)->sin_port;
-	opt.toa_tcp_host = ((struct sockaddr_in *)addr)->sin_addr.s_addr;
+	opt.toa_tcp_port = remote->sin_port;
+	opt.toa_tcp_host = remote->sin_addr.s_addr;
 
 	if (bpf_map_update_elem(map_fd, &sock_fd, &opt, BPF_NOEXIST)) {
 		ha_alert("Could not update map element\n");

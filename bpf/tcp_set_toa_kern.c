@@ -6,6 +6,9 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
+
+#define TCP_TOA_OPTLEN_IPV4	8
+
 struct tcp_toa_option {
 	__u8 kind;
 	__u8 len;
@@ -31,28 +34,26 @@ int set_toa_tcp_bs(struct bpf_sock_ops *skops) {
 		return 1;
 
 	struct tcp_toa_option *data = NULL;
-	struct tcp_toa_option useropt = {
-		.kind = 254,
-		.len = 0,
-		.port = 0,
-		.addr = 0,
-	};
 
-	data = bpf_sk_storage_get(&toa_conn_store, sk, &useropt, BPF_SK_STORAGE_GET_F_CREATE);
+	data = bpf_sk_storage_get(&toa_conn_store, sk, NULL, BPF_SK_STORAGE_GET_F_CREATE);
 	if (!data)
 		return 1;
 
 	switch (op) {
-	case BPF_SOCK_OPS_TCP_CONNECT_CB: 
-	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: {
-		bpf_sock_ops_cb_flags_set(skops, 
+	case BPF_SOCK_OPS_TCP_CONNECT_CB:
+		bpf_sock_ops_cb_flags_set(skops,
 			skops->bpf_sock_ops_cb_flags |
 			BPF_SOCK_OPS_WRITE_HDR_OPT_CB_FLAG);
 		break;
-	}
+
+	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+		bpf_sock_ops_cb_flags_set(skops,
+			skops->bpf_sock_ops_cb_flags &
+			~BPF_SOCK_OPS_WRITE_HDR_OPT_CB_FLAG);
+		break;
 
 	case BPF_SOCK_OPS_HDR_OPT_LEN_CB: {
-		int option_len = sizeof(struct tcp_toa_option);
+		int option_len = TCP_TOA_OPTLEN_IPV4;
 
 		if (skops->args[1] + option_len <= 40) {
 			rv = option_len;
@@ -63,13 +64,12 @@ int set_toa_tcp_bs(struct bpf_sock_ops *skops) {
 		bpf_reserve_hdr_opt(skops, rv, 0);
 		break;
 	}
-
 	case BPF_SOCK_OPS_WRITE_HDR_OPT_CB: {
 		struct tcp_toa_option opt = {
 			.kind = data->kind,
-			.len  = 8,
-			.port = bpf_htons(data->port),
-			.addr = bpf_htonl(data->addr),
+			.len  = TCP_TOA_OPTLEN_IPV4,
+			.port = data->port,
+			.addr = data->addr,
 		};
 
 		int ret = bpf_store_hdr_opt(skops, &opt, sizeof(opt), 0);
@@ -77,7 +77,6 @@ int set_toa_tcp_bs(struct bpf_sock_ops *skops) {
 		bpf_printk("set_toa_tcp_bs port=%d\n", opt.port);
 		break;
 	}
-
 	default:
 		rv = -1;
 	}
