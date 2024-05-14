@@ -26,61 +26,57 @@ struct {
 
 SEC("sockops")
 int set_toa_tcp_bs(struct bpf_sock_ops *skops) {
-	int rv = 7;
+	int rv = -1;
+	int option_len = 0;
 	int op = (int) skops->op;
 	struct bpf_sock *sk = skops->sk;
+	struct tcp_toa_option opt;
+	struct tcp_toa_option *data = NULL;
 
 	if (!sk)
-		return 1;
-
-	struct tcp_toa_option *data = NULL;
+		goto RET;
 
 	data = bpf_sk_storage_get(&toa_conn_store, sk, NULL, 0);
 	if (!data)
-		return 1;
+		goto RET;
 
 	switch (op) {
 	case BPF_SOCK_OPS_TCP_CONNECT_CB:
+	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
 		bpf_sock_ops_cb_flags_set(skops,
 			skops->bpf_sock_ops_cb_flags |
 			BPF_SOCK_OPS_WRITE_HDR_OPT_CB_FLAG);
 		break;
 
-	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+	case BPF_SOCK_OPS_HDR_OPT_LEN_CB:
+		rv = 0;
+		option_len = TCP_TOA_OPTLEN_IPV4;
+
+		if (skops->args[1] + option_len <= 40) {
+			rv = option_len;
+		}
+
+		bpf_reserve_hdr_opt(skops, rv, 0);
+		break;
+
+	case BPF_SOCK_OPS_WRITE_HDR_OPT_CB:
+		opt.kind = data->kind;
+		opt.len  = TCP_TOA_OPTLEN_IPV4;
+		opt.port = data->port;
+		opt.addr = data->addr;
+
+		bpf_store_hdr_opt(skops, &opt, sizeof(opt), 0);
+
 		bpf_sock_ops_cb_flags_set(skops,
 			skops->bpf_sock_ops_cb_flags &
 			~BPF_SOCK_OPS_WRITE_HDR_OPT_CB_FLAG);
 		break;
 
-	case BPF_SOCK_OPS_HDR_OPT_LEN_CB: {
-		int option_len = TCP_TOA_OPTLEN_IPV4;
-
-		if (skops->args[1] + option_len <= 40) {
-			rv = option_len;
-		} else {
-			rv = 0;
-		}
-
-		bpf_reserve_hdr_opt(skops, rv, 0);
-		break;
-	}
-	case BPF_SOCK_OPS_WRITE_HDR_OPT_CB: {
-		struct tcp_toa_option opt = {
-			.kind = data->kind,
-			.len  = TCP_TOA_OPTLEN_IPV4,
-			.port = data->port,
-			.addr = data->addr,
-		};
-
-		int ret = bpf_store_hdr_opt(skops, &opt, sizeof(opt), 0);
-
-		bpf_printk("set_toa_tcp_bs port=%d\n", opt.port);
-		break;
-	}
 	default:
 		rv = -1;
 	}
 
+RET:
 	skops->reply = rv;
 
 	return 1;
