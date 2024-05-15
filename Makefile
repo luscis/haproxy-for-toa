@@ -58,6 +58,7 @@
 #   USE_OT               : enable the OpenTracing filter
 #   USE_MEMORY_PROFILING : enable the memory profiler. Linux-glibc only.
 #   USE_LIBATOMIC        : force to link with/without libatomic. Automatic.
+#   USE_BPF_TOA          : enable TOA support by BPF program. Automatic.
 #
 # Options can be forced by specifying "USE_xxx=1" or can be disabled by using
 # "USE_xxx=" (empty string). The list of enabled and disabled options for a
@@ -318,7 +319,8 @@ use_opts = USE_EPOLL USE_KQUEUE USE_NETFILTER                                 \
            USE_CLOSEFROM USE_ZLIB USE_SLZ USE_CPU_AFFINITY USE_TFO USE_NS     \
            USE_DL USE_RT USE_DEVICEATLAS USE_51DEGREES USE_WURFL USE_SYSTEMD  \
            USE_OBSOLETE_LINKER USE_PRCTL USE_PROCCTL USE_THREAD_DUMP          \
-           USE_EVPORTS USE_OT USE_QUIC USE_PROMEX USE_MEMORY_PROFILING
+           USE_EVPORTS USE_OT USE_QUIC USE_PROMEX USE_MEMORY_PROFILING        \
+           USE_BPF_TOA
 
 #### Target system options
 # Depending on the target platform, some options are set, as well as some
@@ -809,6 +811,10 @@ endif
 
 ifneq ($(USE_LIBATOMIC),)
   TARGET_LDFLAGS += -latomic
+endif
+
+ifneq ($(USE_BPF_TOA),)
+  TARGET_LDFLAGS += -lbpf
 endif
 
 #### Global link options

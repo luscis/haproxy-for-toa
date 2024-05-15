@@ -1063,8 +1063,17 @@ static int alloc_bind_address(struct sockaddr_storage **ss,
 		src = &s->be->conn_src;
 
 	/* no transparent mode, no need to allocate an address, returns OK */
-	if (!src)
+	if (!src) {
+		cli_conn = objt_conn(strm_orig(s));
+		if (!cli_conn || !conn_get_src(cli_conn))
+			return SRV_STATUS_INTERNAL;
+
+		if (!sockaddr_alloc(ss, NULL, 0))
+			return SRV_STATUS_INTERNAL;
+
+		**ss = *cli_conn->src;
 		return SRV_STATUS_OK;
+	}
 
 	switch (src->opts & CO_SRC_TPROXY_MASK) {
 	case CO_SRC_TPROXY_ADDR:
